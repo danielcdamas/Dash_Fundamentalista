@@ -137,6 +137,22 @@ function pickConta(rows, cdCvm, conta) {
   return r ? scaled(r) : null
 }
 
+// Fallback por DESCRIÇÃO da conta: o plano de contas varia por setor (a DRE
+// de bancos não usa os mesmos códigos da DRE padrão), mas a descrição é
+// estável entre os setores.
+function pickContaByDesc(rows, cdCvm, regex) {
+  const r = rows.find(
+    (x) =>
+      Number(x.CD_CVM) === cdCvm &&
+      /ÚLTIMO/i.test(x.ORDEM_EXERC || '') &&
+      regex.test(x.DS_CONTA || ''),
+  )
+  return r ? scaled(r) : null
+}
+
+const DESC_LUCRO = /^Lucro\/Preju[ií]zo Consolidado do Per[ií]odo$/i
+const DESC_EBIT = /^Resultado Antes do Resultado Financeiro e dos Tributos$/i
+
 // --- coleta principal --------------------------------------------------------
 
 async function main() {
@@ -182,11 +198,15 @@ async function main() {
     for (const year of years) {
       const dre = dfpByYear[year]?.dre
       if (!dre) continue
-      const lucro = pickConta(dre, cdCvm, CONTAS.lucro)
+      const lucro =
+        pickConta(dre, cdCvm, CONTAS.lucro) ??
+        pickContaByDesc(dre, cdCvm, DESC_LUCRO)
       if (lucro != null) netIncomeByYear[year] = lucro
       if (latestWithDre == null) {
         latestWithDre = year
-        ebit = pickConta(dre, cdCvm, CONTAS.ebit)
+        ebit =
+          pickConta(dre, cdCvm, CONTAS.ebit) ??
+          pickContaByDesc(dre, cdCvm, DESC_EBIT)
       }
     }
 

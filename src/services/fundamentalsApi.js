@@ -44,10 +44,13 @@ function withTagAlong(data) {
   return { ...data, tagAlong: TAG_ALONG[data.ticker] ?? null }
 }
 
-// Converte a data da CVM (DD/MM/AAAA) para ISO, para o cálculo de "tempo de IPO".
-function cvmDateToIso(br) {
-  if (!br) return null
-  const m = String(br).match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+// Normaliza a data da CVM para ISO (o cadastro usa AAAA-MM-DD; alguns
+// arquivos antigos usam DD/MM/AAAA), para o cálculo de "tempo de IPO".
+function cvmDateToIso(d) {
+  if (!d) return null
+  const s = String(d)
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return `${s.slice(0, 10)}T00:00:00.000Z`
+  const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
   return m ? `${m[3]}-${m[2]}-${m[1]}T00:00:00.000Z` : null
 }
 
