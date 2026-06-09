@@ -1,4 +1,23 @@
 {
-  "generatedAt": null,
-  "data": {}
+  "generatedAt": "2026-06-09T21:26:00.399Z",
+  "data": {
+    "ITUB4": {
+      "name": "Itaú Unibanco Holding S.A.",
+      "listedSince": null,
+      "ebit": null,
+      "netIncomeCagr": null,
+      "netDebt": null,
+      "netDebtToEbitda": null,
+      "sourceYear": null
+    },
+    "VALE3": {
+      "name": "Vale S.A.",
+      "listedSince": null,
+      "ebit": null,
+      "netIncomeCagr": null,
+      "netDebt": null,
+      "netDebtToEbitda": null,
+      "sourceYear": null
+    }
+  }
 }
