@@ -1,13 +1,19 @@
 // Componente dedicado aos indicadores macroeconômicos brasileiros.
-// Dá destaque para a taxa Selic, que pode ser atualizada manualmente
-// por um campo simples na interface enquanto não há fetch da API real.
+// Dá destaque para a taxa Selic (buscada no BCB, com fallback e edição
+// manual). Os demais indicadores vêm de APIs públicas (BCB / AwesomeAPI).
 
 import { useEffect, useState } from 'react'
-import { fetchMacroIndicators, CURRENT_SELIC } from '../services/macroApi'
+import {
+  fetchMacroIndicators,
+  fetchSelic,
+  CURRENT_SELIC,
+} from '../services/macroApi'
+import SourceBadge from './SourceBadge'
 
 export default function MacroIndicators() {
-  // Selic em destaque — valor inicial fixo (15%), editável pela UI.
+  // Selic em destaque — valor inicial de fallback (15%), editável pela UI.
   const [selic, setSelic] = useState(CURRENT_SELIC)
+  const [selicSource, setSelicSource] = useState('mock')
   const [indicators, setIndicators] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -17,13 +23,16 @@ export default function MacroIndicators() {
     async function load() {
       try {
         setLoading(true)
-        // >>> Aqui é onde o fetch real do BCB/SGS acontece (via macroApi.js).
-        const data = await fetchMacroIndicators()
-        if (active) setIndicators(data)
-
-        // Futuramente, a Selic também virá do fetch real:
-        // const selicReal = await fetchSelic()
-        // if (active) setSelic(selicReal)
+        // Selic real (BCB série 432) + demais indicadores, em paralelo.
+        const [selicRes, data] = await Promise.all([
+          fetchSelic(),
+          fetchMacroIndicators(),
+        ])
+        if (active) {
+          setSelic(selicRes.value)
+          setSelicSource(selicRes.source)
+          setIndicators(data)
+        }
       } finally {
         if (active) setLoading(false)
       }
@@ -43,13 +52,16 @@ export default function MacroIndicators() {
         </h2>
       </header>
 
-      {/* Destaque: taxa Selic com campo de atualização simples */}
+      {/* Destaque: taxa Selic com campo de atualização manual */}
       <div className="mb-5 rounded-xl bg-gradient-to-br from-indigo-600 to-indigo-800 p-5 text-white shadow">
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium uppercase tracking-wide text-indigo-100">
             Taxa Selic (meta)
           </span>
-          <span className="text-xs text-indigo-200">% a.a.</span>
+          <div className="flex items-center gap-2">
+            <SourceBadge source={selicSource} className="!bg-white/15 !text-white" />
+            <span className="text-xs text-indigo-200">% a.a.</span>
+          </div>
         </div>
 
         <div className="mt-2 flex items-end gap-2">
@@ -58,7 +70,10 @@ export default function MacroIndicators() {
             type="number"
             step="0.25"
             value={selic}
-            onChange={(e) => setSelic(Number(e.target.value))}
+            onChange={(e) => {
+              setSelic(Number(e.target.value))
+              setSelicSource('mock') // edição manual => deixa de ser "ao vivo"
+            }}
             className="w-28 bg-transparent text-4xl font-bold outline-none [appearance:textfield] focus:border-b focus:border-indigo-300 [&::-webkit-inner-spin-button]:appearance-none"
             aria-label="Atualizar taxa Selic"
           />
@@ -79,7 +94,10 @@ export default function MacroIndicators() {
               key={ind.id}
               className="rounded-xl border border-slate-200 bg-white p-3"
             >
-              <p className="text-xs text-slate-500">{ind.label}</p>
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-slate-500">{ind.label}</p>
+                <SourceBadge source={ind.source} />
+              </div>
               <p className="mt-1 text-xl font-bold text-slate-800">
                 {ind.unit === 'R$' ? `${ind.unit} ` : ''}
                 {ind.value.toLocaleString('pt-BR')}

@@ -1,52 +1,100 @@
 // ---------------------------------------------------------------------------
 // Camada de serviço de indicadores macroeconômicos brasileiros.
 //
-// Dados MOCKADOS por enquanto. A taxa Selic recebe destaque e pode ser
-// atualizada manualmente pela interface (ver componente MacroIndicators).
+// Integração REAL com APIs públicas e gratuitas (sem necessidade de token):
+//   - Banco Central / SGS  -> Selic (série 432) e IPCA 12 meses (série 13522)
+//   - AwesomeAPI           -> Dólar (USD-BRL)
 //
-// >>> ONDE INSERIR A API REAL <<<
-// O Banco Central do Brasil expõe séries temporais públicas e gratuitas
-// (SGS - Sistema Gerenciador de Séries Temporais), sem necessidade de token:
-//   - Selic meta (% a.a.) -> série 432
-//   - IPCA (% mês)        -> série 433
-//   - CDI                 -> série 12
-//   - Dólar (PTAX venda)  -> série 1
-//
-// Exemplo de endpoint (último valor da Selic):
-//   https://api.bcb.gov.br/dados/serie/bcdata.sgs.432/dados/ultimos/1?formato=json
-//
-// Exemplo de implementação real (descomentar e adaptar futuramente):
-//
-//   export async function fetchSelic() {
-//     const url =
-//       'https://api.bcb.gov.br/dados/serie/bcdata.sgs.432/dados/ultimos/1?formato=json'
-//     const res = await fetch(url)
-//     if (!res.ok) throw new Error('Falha ao consultar a Selic no BCB')
-//     const [{ valor }] = await res.json()
-//     return Number(valor)
-//   }
+// Toda chamada tem FALLBACK automático para um valor mockado, então a
+// interface nunca quebra caso uma API esteja indisponível ou bloqueada
+// por CORS. Cada indicador informa sua origem (`source`: 'live' | 'mock').
 // ---------------------------------------------------------------------------
 
-// Valor fixo atual da Selic (meta, % a.a.). Atualize aqui ou pela interface.
+// Valor fixo atual da Selic (meta, % a.a.). Serve de fallback e de valor
+// inicial editável na interface.
 export const CURRENT_SELIC = 15.0
 
-// Demais indicadores macro mockados.
-const MOCK_MACRO = [
-  { id: 'ipca', label: 'IPCA (12 meses)', value: 4.62, unit: '%', hint: 'Inflação oficial' },
-  { id: 'cdi', label: 'CDI', value: 14.9, unit: '% a.a.', hint: 'Referência de renda fixa' },
-  { id: 'dolar', label: 'Dólar (PTAX)', value: 5.43, unit: 'R$', hint: 'Câmbio comercial' },
-  { id: 'pib', label: 'PIB (var. anual)', value: 2.1, unit: '%', hint: 'Crescimento econômico' },
-]
+// Endpoints das séries do SGS do Banco Central.
+const SGS = (serie) =>
+  `https://api.bcb.gov.br/dados/serie/bcdata.sgs.${serie}/dados/ultimos/1?formato=json`
+
+/**
+ * Busca o último valor de uma série temporal do SGS/BCB.
+ * @param {number|string} serie - código da série (ex: 432 = Selic meta)
+ * @returns {Promise<number|null>} valor numérico ou null em caso de falha
+ */
+async function fetchSgsLast(serie) {
+  try {
+    const res = await fetch(SGS(serie))
+    if (!res.ok) throw new Error(`SGS ${serie} respondeu ${res.status}`)
+    const json = await res.json()
+    const valor = json?.[0]?.valor
+    return valor != null ? Number(valor) : null
+  } catch (err) {
+    console.warn(`[macroApi] série ${serie} indisponível:`, err.message)
+    return null
+  }
+}
+
+/**
+ * Busca a cotação do dólar (USD-BRL) na AwesomeAPI.
+ * @returns {Promise<number|null>}
+ */
+async function fetchUsdBrl() {
+  try {
+    const res = await fetch('https://economia.awesomeapi.com.br/json/last/USD-BRL')
+    if (!res.ok) throw new Error(`AwesomeAPI respondeu ${res.status}`)
+    const json = await res.json()
+    const bid = json?.USDBRL?.bid
+    return bid != null ? Number(bid) : null
+  } catch (err) {
+    console.warn('[macroApi] dólar indisponível:', err.message)
+    return null
+  }
+}
+
+/**
+ * Busca a taxa Selic meta (% a.a.) no BCB.
+ * @returns {Promise<{source:'live'|'mock', value:number}>}
+ */
+export async function fetchSelic() {
+  const value = await fetchSgsLast(432) // 432 = Meta Selic definida pelo Copom
+  return value != null
+    ? { source: 'live', value }
+    : { source: 'mock', value: CURRENT_SELIC }
+}
+
+// Helper: monta o objeto de um indicador com fallback transparente.
+function buildIndicator(base, liveValue) {
+  return liveValue != null
+    ? { ...base, value: liveValue, source: 'live' }
+    : { ...base, source: 'mock' }
+}
 
 /**
  * Busca os indicadores macroeconômicos secundários (exceto Selic).
+ * Faz as chamadas em paralelo e aplica fallback indicador a indicador.
  *
- * Simula latência de rede e devolve dados mockados. Substituir pelo
- * fetch real do BCB/SGS no futuro (ver bloco comentado acima).
- *
- * @returns {Promise<Array<{id,label,value,unit,hint}>>}
+ * @returns {Promise<Array<{id,label,value,unit,hint,source}>>}
  */
 export async function fetchMacroIndicators() {
-  await new Promise((resolve) => setTimeout(resolve, 400))
-  return MOCK_MACRO
+  const [ipca12, usd] = await Promise.all([
+    fetchSgsLast(13522), // 13522 = IPCA acumulado em 12 meses
+    fetchUsdBrl(),
+  ])
+
+  return [
+    buildIndicator(
+      { id: 'ipca', label: 'IPCA (12 meses)', value: 4.62, unit: '%', hint: 'Inflação oficial' },
+      ipca12,
+    ),
+    buildIndicator(
+      { id: 'dolar', label: 'Dólar (PTAX)', value: 5.43, unit: 'R$', hint: 'Câmbio comercial' },
+      usd != null ? Number(usd.toFixed(2)) : null,
+    ),
+    // CDI e PIB seguem mockados (não há série direta simples no SGS para o
+    // formato exibido aqui). Substituir por séries reais futuramente.
+    { id: 'cdi', label: 'CDI', value: 14.9, unit: '% a.a.', hint: 'Referência de renda fixa', source: 'mock' },
+    { id: 'pib', label: 'PIB (var. anual)', value: 2.1, unit: '%', hint: 'Crescimento econômico', source: 'mock' },
+  ]
 }

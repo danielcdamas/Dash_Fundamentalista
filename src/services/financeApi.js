@@ -1,71 +1,58 @@
 // ---------------------------------------------------------------------------
 // Camada de serviço de dados financeiros (ativos / portfólio).
 //
-// Neste primeiro momento os dados são MOCKADOS para permitir o desenvolvimento
-// da interface sem depender de uma chave de API. A função `fetchPortfolio`
-// abaixo já tem a assinatura assíncrona que a API real terá, então a troca
-// no futuro será transparente para os componentes.
+// A cotação real vem da brapi.dev, mas o navegador NÃO fala com a brapi
+// diretamente: ele chama a função serverless `/api/quote` (ver api/quote.js),
+// que guarda o token no servidor (process.env.BRAPI_TOKEN, SEM prefixo VITE_).
+// Assim o token nunca é exposto no bundle do frontend — e ainda evita CORS,
+// já que a chamada é para a mesma origem.
 //
-// >>> ONDE INSERIR A API REAL <<<
-// Sugestões de APIs financeiras gratuitas para a B3:
-//   - brapi.dev          -> https://brapi.dev/api/quote/ITUB4,VALE3?token=SEU_TOKEN
-//   - Alpha Vantage      -> https://www.alphavantage.co/
-//   - Yahoo Finance (não oficial)
+// Em caso de falha (token ausente no servidor, offline, etc.), o serviço faz
+// FALLBACK automático para dados mockados. O retorno informa a origem (`source`).
 //
-// Exemplo de implementação real (descomentar e adaptar quando houver token):
-//
-//   export async function fetchPortfolio(tickers) {
-//     const token = import.meta.env.VITE_BRAPI_TOKEN
-//     const url = `https://brapi.dev/api/quote/${tickers.join(',')}?token=${token}`
-//     const res = await fetch(url)
-//     if (!res.ok) throw new Error('Falha ao consultar a API de cotações')
-//     const json = await res.json()
-//     return json.results.map((r) => ({
-//       ticker: r.symbol,
-//       name: r.longName ?? r.shortName,
-//       price: r.regularMarketPrice,
-//       changePercent: r.regularMarketChangePercent,
-//       currency: r.currency ?? 'BRL',
-//     }))
-//   }
+// Obs.: em desenvolvimento local com `npm run dev` (Vite puro) a rota /api não
+// existe — a chamada falha e cai no mock. Para exercitar a função localmente,
+// use `vercel dev`.
 // ---------------------------------------------------------------------------
 
 // Tickers monitorados por padrão no dashboard.
 export const DEFAULT_TICKERS = ['ITUB4', 'VALE3']
 
-// Dados mockados que imitam o formato já normalizado pela camada de serviço.
+// Dados mockados usados como fallback (mesmo formato já normalizado).
 const MOCK_QUOTES = {
-  ITUB4: {
-    ticker: 'ITUB4',
-    name: 'Itaú Unibanco PN',
-    price: 36.42,
-    changePercent: 0.85,
-    currency: 'BRL',
-  },
-  VALE3: {
-    ticker: 'VALE3',
-    name: 'Vale ON',
-    price: 58.17,
-    changePercent: -1.23,
-    currency: 'BRL',
-  },
+  ITUB4: { ticker: 'ITUB4', name: 'Itaú Unibanco PN', price: 36.42, changePercent: 0.85, currency: 'BRL' },
+  VALE3: { ticker: 'VALE3', name: 'Vale ON', price: 58.17, changePercent: -1.23, currency: 'BRL' },
+}
+
+function mockResult(tickers) {
+  return {
+    source: 'mock',
+    data: tickers.map((t) => MOCK_QUOTES[t]).filter(Boolean),
+  }
 }
 
 /**
- * Busca as cotações dos tickers informados.
+ * Busca as cotações dos tickers via proxy serverless `/api/quote`.
+ * Em caso de falha, retorna dados mockados.
  *
- * Simula a latência de uma chamada de rede e devolve dados mockados.
- * Quando a API real for plugada, basta substituir o corpo desta função
- * (ver bloco comentado no topo do arquivo) mantendo o mesmo retorno.
- *
- * @param {string[]} tickers - lista de tickers, ex: ['ITUB4', 'VALE3']
- * @returns {Promise<Array<{ticker,name,price,changePercent,currency}>>}
+ * @param {string[]} tickers - ex: ['ITUB4', 'VALE3']
+ * @returns {Promise<{source: 'live'|'mock', data: Array}>}
  */
 export async function fetchPortfolio(tickers = DEFAULT_TICKERS) {
-  // Simula o tempo de resposta da rede.
-  await new Promise((resolve) => setTimeout(resolve, 600))
+  try {
+    const res = await fetch(`/api/quote?tickers=${tickers.join(',')}`)
+    if (!res.ok) throw new Error(`proxy /api/quote respondeu ${res.status}`)
 
-  return tickers
-    .map((t) => MOCK_QUOTES[t])
-    .filter(Boolean)
+    const json = await res.json()
+    const data = json.data ?? []
+
+    // Sem resultados válidos (ex.: token ausente no servidor) -> fallback.
+    if (data.length === 0) return mockResult(tickers)
+
+    return { source: 'live', data }
+  } catch (err) {
+    // Falha de rede / rota inexistente (dev local) -> degrada para o mock.
+    console.warn('[financeApi] usando fallback mockado:', err.message)
+    return mockResult(tickers)
+  }
 }

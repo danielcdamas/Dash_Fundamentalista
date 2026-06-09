@@ -1,13 +1,15 @@
 // Componente de resumo do portfólio.
-// Consome a camada de serviço (financeApi.js) que hoje devolve dados mockados
-// e, no futuro, fará o fetch de uma API financeira real.
+// Consome a camada de serviço (financeApi.js), que tenta a API real
+// (brapi.dev) e cai em dados mockados se necessário.
 
 import { useEffect, useState } from 'react'
 import { fetchPortfolio, DEFAULT_TICKERS } from '../services/financeApi'
 import AssetCard from './AssetCard'
+import SourceBadge from './SourceBadge'
 
 export default function PortfolioSummary() {
   const [assets, setAssets] = useState([])
+  const [source, setSource] = useState('mock')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -17,9 +19,12 @@ export default function PortfolioSummary() {
     async function load() {
       try {
         setLoading(true)
-        // >>> Aqui é onde a chamada à API real acontece (via financeApi.js).
-        const data = await fetchPortfolio(DEFAULT_TICKERS)
-        if (active) setAssets(data)
+        // Chamada à API real (com fallback interno para mock).
+        const { data, source } = await fetchPortfolio(DEFAULT_TICKERS)
+        if (active) {
+          setAssets(data)
+          setSource(source)
+        }
       } catch (err) {
         if (active) setError(err.message)
       } finally {
@@ -39,7 +44,7 @@ export default function PortfolioSummary() {
         <h2 className="text-base font-semibold text-slate-700">
           Resumo do Portfólio
         </h2>
-        <span className="text-xs text-slate-400">Dados simulados</span>
+        {!loading && <SourceBadge source={source} />}
       </header>
 
       {loading && (
