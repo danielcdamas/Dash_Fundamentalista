@@ -30,7 +30,8 @@ export default function App() {
       {/* Rodapé */}
       <footer className="mx-auto max-w-6xl px-4 pb-8 pt-2">
         <p className="text-center text-xs text-slate-400">
-          Dados simulados (mock) — integração com APIs reais pendente.
+          Dados via brapi.dev, Banco Central (SGS) e AwesomeAPI — com fallback
+          simulado quando uma fonte está indisponível.
         </p>
       </footer>
     </div>
