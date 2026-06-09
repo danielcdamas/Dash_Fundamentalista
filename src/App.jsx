@@ -3,6 +3,7 @@
 
 import PortfolioSummary from './components/PortfolioSummary'
 import MacroIndicators from './components/MacroIndicators'
+import FundamentalsPanel from './components/FundamentalsPanel'
 
 export default function App() {
   return (
@@ -24,6 +25,8 @@ export default function App() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <PortfolioSummary />
           <MacroIndicators />
+          {/* Painel de fundamentos ocupa a largura inteira da grade */}
+          <FundamentalsPanel />
         </div>
       </main>
 
