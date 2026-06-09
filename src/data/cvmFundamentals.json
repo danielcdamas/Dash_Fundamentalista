@@ -1,0 +1,23 @@
+{
+  "generatedAt": "2026-06-09T21:28:24.537Z",
+  "data": {
+    "ITUB4": {
+      "name": "Itaú Unibanco Holding S.A.",
+      "listedSince": "2002-12-30",
+      "ebit": 47556000000,
+      "netIncomeCagr": null,
+      "netDebt": 0,
+      "netDebtToEbitda": null,
+      "sourceYear": 2025
+    },
+    "VALE3": {
+      "name": "Vale S.A.",
+      "listedSince": "1970-01-02",
+      "ebit": 55459000000,
+      "netIncomeCagr": 5.1,
+      "netDebt": 126838000000,
+      "netDebtToEbitda": null,
+      "sourceYear": 2025
+    }
+  }
+}
