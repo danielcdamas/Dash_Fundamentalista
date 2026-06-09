@@ -18,8 +18,10 @@
 // ---------------------------------------------------------------------------
 
 import AdmZip from 'adm-zip'
-import { writeFileSync, mkdirSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { writeFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { dirname, resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -46,10 +48,39 @@ const CONTAS = {
 
 // --- utilidades --------------------------------------------------------------
 
+// Alguns servidores públicos rejeitam requisições sem User-Agent de navegador.
+const BROWSER_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+  Accept: '*/*',
+}
+
+// Fallback via curl: atravessa problemas de TLS que o fetch do Node não
+// atravessa (cadeias de certificado incompletas são comuns em sites .gov.br).
+function curlFallback(url) {
+  const tmp = join(tmpdir(), `cvm-dl-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+  try {
+    execFileSync(
+      'curl',
+      ['-fsSL', '--retry', '2', '-A', BROWSER_HEADERS['User-Agent'], '-o', tmp, url],
+      { stdio: ['ignore', 'ignore', 'inherit'], timeout: 300_000 },
+    )
+    return readFileSync(tmp)
+  } finally {
+    rmSync(tmp, { force: true })
+  }
+}
+
 async function getBuffer(url) {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`${url} -> HTTP ${res.status}`)
-  return Buffer.from(await res.arrayBuffer())
+  try {
+    const res = await fetch(url, { headers: BROWSER_HEADERS })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return Buffer.from(await res.arrayBuffer())
+  } catch (err) {
+    const causa = err.cause?.code ?? err.cause?.message ?? err.message
+    console.warn(`fetch falhou (${causa}); tentando via curl: ${url}`)
+    return curlFallback(url)
+  }
 }
 
 // CSVs da CVM: ';' como separador e encoding ISO-8859-1.
