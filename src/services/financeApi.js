@@ -1,24 +1,22 @@
 // ---------------------------------------------------------------------------
 // Camada de serviço de dados financeiros (ativos / portfólio).
 //
-// Integração REAL com a API gratuita da brapi.dev (cotações da B3).
-// Caso a chamada falhe (sem token, offline, CORS, etc.), o serviço faz
-// FALLBACK automático para dados mockados, garantindo que a interface
-// nunca quebre. O retorno informa a origem do dado (`source`).
+// A cotação real vem da brapi.dev, mas o navegador NÃO fala com a brapi
+// diretamente: ele chama a função serverless `/api/quote` (ver api/quote.js),
+// que guarda o token no servidor (process.env.BRAPI_TOKEN, SEM prefixo VITE_).
+// Assim o token nunca é exposto no bundle do frontend — e ainda evita CORS,
+// já que a chamada é para a mesma origem.
 //
-// >>> CONFIGURAÇÃO DA API REAL <<<
-// 1. Crie um token gratuito em https://brapi.dev (Dashboard -> Token).
-// 2. Defina a variável de ambiente VITE_BRAPI_TOKEN:
-//      - localmente: arquivo .env.local  ->  VITE_BRAPI_TOKEN=seu_token
-//      - na Vercel:  Project Settings -> Environment Variables
-// Sem o token, o app continua funcionando com os dados mockados.
+// Em caso de falha (token ausente no servidor, offline, etc.), o serviço faz
+// FALLBACK automático para dados mockados. O retorno informa a origem (`source`).
+//
+// Obs.: em desenvolvimento local com `npm run dev` (Vite puro) a rota /api não
+// existe — a chamada falha e cai no mock. Para exercitar a função localmente,
+// use `vercel dev`.
 // ---------------------------------------------------------------------------
 
 // Tickers monitorados por padrão no dashboard.
 export const DEFAULT_TICKERS = ['ITUB4', 'VALE3']
-
-// Token lido das variáveis de ambiente do Vite (opcional).
-const BRAPI_TOKEN = import.meta.env.VITE_BRAPI_TOKEN
 
 // Dados mockados usados como fallback (mesmo formato já normalizado).
 const MOCK_QUOTES = {
@@ -34,38 +32,26 @@ function mockResult(tickers) {
 }
 
 /**
- * Busca as cotações dos tickers informados na API real (brapi.dev).
+ * Busca as cotações dos tickers via proxy serverless `/api/quote`.
  * Em caso de falha, retorna dados mockados.
  *
  * @param {string[]} tickers - ex: ['ITUB4', 'VALE3']
  * @returns {Promise<{source: 'live'|'mock', data: Array}>}
  */
 export async function fetchPortfolio(tickers = DEFAULT_TICKERS) {
-  // Sem token configurado: usa mock direto (evita um 401 desnecessário).
-  if (!BRAPI_TOKEN) {
-    return mockResult(tickers)
-  }
-
   try {
-    const url = `https://brapi.dev/api/quote/${tickers.join(',')}?token=${BRAPI_TOKEN}`
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`brapi respondeu ${res.status}`)
+    const res = await fetch(`/api/quote?tickers=${tickers.join(',')}`)
+    if (!res.ok) throw new Error(`proxy /api/quote respondeu ${res.status}`)
 
     const json = await res.json()
-    const data = (json.results ?? []).map((r) => ({
-      ticker: r.symbol,
-      name: r.longName ?? r.shortName ?? r.symbol,
-      price: r.regularMarketPrice,
-      changePercent: r.regularMarketChangePercent ?? 0,
-      currency: r.currency ?? 'BRL',
-    }))
+    const data = json.data ?? []
 
-    // Se a API não devolveu nenhum resultado válido, cai no fallback.
+    // Sem resultados válidos (ex.: token ausente no servidor) -> fallback.
     if (data.length === 0) return mockResult(tickers)
 
     return { source: 'live', data }
   } catch (err) {
-    // Falha de rede/CORS/token -> degrada para os dados mockados.
+    // Falha de rede / rota inexistente (dev local) -> degrada para o mock.
     console.warn('[financeApi] usando fallback mockado:', err.message)
     return mockResult(tickers)
   }
