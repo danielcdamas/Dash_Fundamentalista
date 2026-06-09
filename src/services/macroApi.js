@@ -2,8 +2,9 @@
 // Camada de serviço de indicadores macroeconômicos brasileiros.
 //
 // Integração REAL com APIs públicas e gratuitas (sem necessidade de token):
-//   - Banco Central / SGS  -> Selic (série 432) e IPCA 12 meses (série 13522)
-//   - AwesomeAPI           -> Dólar (USD-BRL)
+//   - Banco Central / SGS          -> Selic (432), IPCA 12m (13522), CDI (4389)
+//   - Banco Central / Expectativas -> PIB (mediana do mercado, Focus)
+//   - AwesomeAPI                   -> Dólar (USD-BRL)
 //
 // Toda chamada tem FALLBACK automático para um valor mockado, então a
 // interface nunca quebra caso uma API esteja indisponível ou bloqueada
@@ -14,7 +15,7 @@
 // inicial editável na interface.
 export const CURRENT_SELIC = 15.0
 
-// Endpoints das séries do SGS do Banco Central.
+// Endpoint das séries temporais do SGS do Banco Central.
 const SGS = (serie) =>
   `https://api.bcb.gov.br/dados/serie/bcdata.sgs.${serie}/dados/ultimos/1?formato=json`
 
@@ -54,6 +55,29 @@ async function fetchUsdBrl() {
 }
 
 /**
+ * Busca a expectativa de mercado (mediana, Focus/BCB) para o PIB Total anual.
+ * Usa a API de Expectativas (Olinda) do Banco Central.
+ * @returns {Promise<number|null>} variação % esperada ou null em caso de falha
+ */
+async function fetchPibFocus() {
+  try {
+    const base =
+      'https://olinda.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata/ExpectativasMercadoAnuais'
+    const query =
+      "?$top=1&$orderby=Data desc&$format=json&$select=Mediana" +
+      "&$filter=Indicador eq 'PIB Total'"
+    const res = await fetch(base + encodeURI(query))
+    if (!res.ok) throw new Error(`Expectativas respondeu ${res.status}`)
+    const json = await res.json()
+    const mediana = json?.value?.[0]?.Mediana
+    return mediana != null ? Number(mediana) : null
+  } catch (err) {
+    console.warn('[macroApi] PIB (Focus) indisponível:', err.message)
+    return null
+  }
+}
+
+/**
  * Busca a taxa Selic meta (% a.a.) no BCB.
  * @returns {Promise<{source:'live'|'mock', value:number}>}
  */
@@ -78,9 +102,11 @@ function buildIndicator(base, liveValue) {
  * @returns {Promise<Array<{id,label,value,unit,hint,source}>>}
  */
 export async function fetchMacroIndicators() {
-  const [ipca12, usd] = await Promise.all([
+  const [ipca12, usd, cdi, pib] = await Promise.all([
     fetchSgsLast(13522), // 13522 = IPCA acumulado em 12 meses
     fetchUsdBrl(),
+    fetchSgsLast(4389), // 4389 = Taxa CDI anualizada (base 252)
+    fetchPibFocus(), // PIB Total anual (expectativa de mercado / Focus)
   ])
 
   return [
@@ -92,9 +118,13 @@ export async function fetchMacroIndicators() {
       { id: 'dolar', label: 'Dólar (PTAX)', value: 5.43, unit: 'R$', hint: 'Câmbio comercial' },
       usd != null ? Number(usd.toFixed(2)) : null,
     ),
-    // CDI e PIB seguem mockados (não há série direta simples no SGS para o
-    // formato exibido aqui). Substituir por séries reais futuramente.
-    { id: 'cdi', label: 'CDI', value: 14.9, unit: '% a.a.', hint: 'Referência de renda fixa', source: 'mock' },
-    { id: 'pib', label: 'PIB (var. anual)', value: 2.1, unit: '%', hint: 'Crescimento econômico', source: 'mock' },
+    buildIndicator(
+      { id: 'cdi', label: 'CDI', value: 14.9, unit: '% a.a.', hint: 'Referência de renda fixa' },
+      cdi,
+    ),
+    buildIndicator(
+      { id: 'pib', label: 'PIB (var. anual)', value: 2.1, unit: '%', hint: 'Expectativa de mercado (Focus/BCB)' },
+      pib,
+    ),
   ]
 }
