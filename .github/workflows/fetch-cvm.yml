@@ -8,10 +8,6 @@ on:
   schedule:
     # 1x por mês (dia 1, 06:00 UTC) — as DFPs da CVM mudam raramente.
     - cron: '0 6 1 * *'
-  push:
-    # Gatilho temporário para a primeira coleta (o push do bot com
-    # GITHUB_TOKEN não redispara o workflow, então não há recursão).
-    branches: [claude/cvm-fundamentals]
 
 permissions:
   contents: write
